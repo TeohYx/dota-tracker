@@ -28,7 +28,7 @@ async function ensureSchema() {
       target_mmr INTEGER NOT NULL,
       deadline TEXT NOT NULL,
       mmr_per_win INTEGER NOT NULL DEFAULT 30,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     )
   `);
   initialized = true;
@@ -62,13 +62,13 @@ export async function upsertGoal(input: {
   await ensureSchema();
   await getClient().execute({
     sql: `INSERT INTO goals (account_id, start_mmr, target_mmr, deadline, mmr_per_win, created_at)
-          VALUES (?, ?, ?, ?, ?, datetime('now'))
+          VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
           ON CONFLICT(account_id) DO UPDATE SET
             start_mmr = excluded.start_mmr,
             target_mmr = excluded.target_mmr,
             deadline = excluded.deadline,
             mmr_per_win = excluded.mmr_per_win,
-            created_at = datetime('now')`,
+            created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
     args: [input.account_id, input.start_mmr, input.target_mmr, input.deadline, input.mmr_per_win]
   });
   const goal = await getGoal(input.account_id);

@@ -36,19 +36,30 @@ export type Goal = {
   account_id: number;
   start_mmr: number;
   target_mmr: number;
-  deadline: string; // ISO date (yyyy-mm-dd)
-  created_at: string; // ISO datetime
+  deadline: string;
+  created_at: string;
   mmr_per_win: number;
 };
 
 export type GoalProjection = {
   goal: Goal;
   current_mmr: number;
+  // Overall remaining-to-target
   mmr_remaining: number;
   wins_remaining: number;
   days_remaining: number;
-  net_wins_per_day: number;
-  on_track: boolean;
+  mmr_per_day_needed: number;
+  wins_per_day_needed: number;
+  // Progress so far
   net_wins_so_far: number;
   expected_net_wins_so_far: number;
+  progress_pct: number;
+  on_track: boolean;
+  reached: boolean;
+  // Today
+  today_wins: number;
+  today_losses: number;
+  today_net: number;
+  today_target_wins: number;
+  today_complete: boolean;
 };

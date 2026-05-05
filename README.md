@@ -19,12 +19,29 @@ the `DEFAULT_ACCOUNT_ID` env var.
 
 ```bash
 npm install
+cp .env.example .env.local   # then edit APP_PASSWORD and APP_SECRET
 npm run dev
-# open http://localhost:3000
+# open http://localhost:3000  (you'll be redirected to /login)
 ```
 
 A local SQLite DB is created at `data/tracker.db` on first request. No setup
-needed.
+needed beyond the env vars.
+
+## How the app flows
+
+1. **Login** — single password gate (`APP_PASSWORD`). HMAC-signed cookie
+   (`APP_SECRET`) carries the session for 30 days.
+2. **Onboarding step 1** — confirm your real MMR (OpenDota's estimate is shown
+   as a hint, but you set the real number).
+3. **Onboarding step 2** — pick target MMR + days. Live preview shows the
+   required pace before you commit.
+4. **Lock in** — once saved, the goal is **locked**. The API refuses POSTs
+   while a goal exists (409). Only **Reset goal** (DELETE) clears it.
+5. **Locked dashboard** — MMR progress ring, days-remaining countdown, today's
+   net wins vs today's target, required MMR/day and wins/day, recent matches,
+   trend chart. Pace recomputes naturally as days tick down — if you set
+   "300 MMR in 300 days," the per-day target rises automatically the longer
+   you go without hitting it.
 
 ## Production database (one option among many)
 
