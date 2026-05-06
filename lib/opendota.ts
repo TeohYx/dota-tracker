@@ -35,14 +35,15 @@ function deriveMmr(rankTier: number | null, computedMmr: number | null): number 
   return 0;
 }
 
-async function odFetch(path: string, init?: RequestInit) {
+async function odFetch(path: string, opts: { cacheSeconds?: number } = {}) {
   const key = process.env.OPENDOTA_API_KEY;
   const sep = path.includes("?") ? "&" : "?";
   const url = `${BASE}${path}${key ? `${sep}api_key=${key}` : ""}`;
+  const cacheSeconds = opts.cacheSeconds ?? 30;
   const res = await fetch(url, {
-    ...init,
-    next: { revalidate: 30 },
-    headers: { Accept: "application/json", ...(init?.headers ?? {}) }
+    cache: cacheSeconds === 0 ? "no-store" : "default",
+    next: cacheSeconds > 0 ? { revalidate: cacheSeconds } : undefined,
+    headers: { Accept: "application/json" }
   });
   if (!res.ok) {
     throw new Error(`OpenDota ${path} ${res.status}`);
@@ -79,10 +80,23 @@ export async function fetchPlayerSummary(accountId: number): Promise<PlayerSumma
   };
 }
 
-export async function fetchRecentMatches(accountId: number, limit = 30): Promise<Match[]> {
-  const data = await odFetch(`/players/${accountId}/recentMatches`);
+export async function fetchMatches(
+  accountId: number,
+  opts: { days?: number; limit?: number } = {}
+): Promise<Match[]> {
+  const days = opts.days ?? 90;
+  const limit = opts.limit ?? 500;
+  const params = new URLSearchParams({
+    significant: "0",
+    limit: String(limit)
+  });
+  if (days > 0) params.set("date", String(days));
+  const data = await odFetch(
+    `/players/${accountId}/matches?${params.toString()}`,
+    { cacheSeconds: 0 }
+  );
   const arr: any[] = Array.isArray(data) ? data : [];
-  return arr.slice(0, limit).map((m) => {
+  return arr.map((m) => {
     const isRadiant = m.player_slot < 128;
     return {
       match_id: m.match_id,

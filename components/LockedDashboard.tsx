@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { GoalProjection, Match, PlayerSummary } from "@/lib/types";
 import MmrProgress from "./MmrProgress";
 import TodayCard from "./TodayCard";
@@ -9,17 +9,36 @@ import CountdownCard from "./CountdownCard";
 import MatchList from "./MatchList";
 import ProgressChart from "./ProgressChart";
 
+function fmtAgo(ms: number): string {
+  const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  if (s < 5) return "just now";
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m / 60)}h ago`;
+}
+
 export default function LockedDashboard({
   player,
   matches,
   projection,
+  matchesSinceLockIn,
+  refreshedAt,
   onReset
 }: {
   player: PlayerSummary;
   matches: Match[];
   projection: GoalProjection;
+  matchesSinceLockIn: number;
+  refreshedAt: number;
   onReset: () => void;
 }) {
+  // Re-render every 15s so the "X ago" text stays fresh even between SWR fetches.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 15_000);
+    return () => clearInterval(id);
+  }, []);
   const [confirm, setConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
 
@@ -74,6 +93,22 @@ export default function LockedDashboard({
         <div className="mt-1 text-sm text-muted">
           {projection.progress_pct}% of the way from {projection.goal.start_mmr.toLocaleString()} to {projection.goal.target_mmr.toLocaleString()}
         </div>
+        <div className="mt-2 flex items-center justify-center gap-3 text-[11px] text-muted">
+          <span>
+            Since lock-in:{" "}
+            <span className="text-text">{matchesSinceLockIn}</span> match{matchesSinceLockIn === 1 ? "" : "es"} ·{" "}
+            <span className={projection.net_wins_so_far >= 0 ? "text-win" : "text-lose"}>
+              {projection.net_wins_so_far >= 0 ? "+" : ""}{projection.net_wins_so_far} net
+            </span>
+          </span>
+          <span>·</span>
+          <span>Updated {fmtAgo(refreshedAt)}</span>
+        </div>
+        {matchesSinceLockIn === 0 && (
+          <div className="mx-auto mt-2 max-w-md text-[11px] text-muted">
+            New matches can take a few minutes to appear — OpenDota indexes them after the game ends.
+          </div>
+        )}
       </section>
 
       <MmrProgress

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchRecentMatches } from "@/lib/opendota";
+import { fetchMatches } from "@/lib/opendota";
 import { isAuthenticated } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -11,11 +11,12 @@ export async function GET(req: Request, ctx: { params: { id: string } }) {
     return NextResponse.json({ error: "Invalid account id" }, { status: 400 });
   }
   const url = new URL(req.url);
-  const limit = Math.min(Number(url.searchParams.get("limit") ?? 30), 100);
+  const days = Math.max(1, Math.min(Number(url.searchParams.get("days") ?? 90), 365));
+  const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit") ?? 500), 1000));
   try {
-    const matches = await fetchRecentMatches(id, limit);
+    const matches = await fetchMatches(id, { days, limit });
     return NextResponse.json(matches, {
-      headers: { "Cache-Control": "public, max-age=0, s-maxage=30, stale-while-revalidate=60" }
+      headers: { "Cache-Control": "no-store" }
     });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message ?? "fetch failed" }, { status: 502 });
