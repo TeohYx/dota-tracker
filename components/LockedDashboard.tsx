@@ -24,6 +24,7 @@ export default function LockedDashboard({
   projection,
   matchesSinceLockIn,
   refreshedAt,
+  readOnly = false,
   onReset
 }: {
   player: PlayerSummary;
@@ -31,6 +32,7 @@ export default function LockedDashboard({
   projection: GoalProjection;
   matchesSinceLockIn: number;
   refreshedAt: number;
+  readOnly?: boolean;
   onReset: () => void;
 }) {
   // Re-render every 15s so the "X ago" text stays fresh even between SWR fetches.
@@ -78,7 +80,9 @@ export default function LockedDashboard({
           <span className="rounded-full border border-border bg-panel2 px-2 py-1 text-muted">
             🔒 Goal locked
           </span>
-          <button className="btn-ghost" onClick={() => setConfirm(true)}>Reset goal</button>
+          {!readOnly && (
+            <button className="btn-ghost" onClick={() => setConfirm(true)}>Reset goal</button>
+          )}
         </div>
       </section>
 
@@ -135,7 +139,7 @@ export default function LockedDashboard({
         Data via OpenDota. Pace recomputes daily — your wins/day target shifts as days tick down.
       </footer>
 
-      {confirm && (
+      {confirm && !readOnly && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
           <div className="card w-full max-w-md">
             <h3 className="text-lg font-semibold">Reset your goal?</h3>

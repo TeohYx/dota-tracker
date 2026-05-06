@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { deleteGoal, getGoal, upsertGoal } from "@/lib/db";
-import { isAuthenticated } from "@/lib/auth";
+import { isAuthenticated, isMain } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +32,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   if (!isAuthenticated()) return NextResponse.json({ error: "auth required" }, { status: 401 });
+  if (!isMain()) return NextResponse.json({ error: "guests cannot modify goals" }, { status: 403 });
   const body = await req.json().catch(() => null);
   const parsed = goalSchema.safeParse(body);
   if (!parsed.success) {
@@ -63,6 +64,7 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
   if (!isAuthenticated()) return NextResponse.json({ error: "auth required" }, { status: 401 });
+  if (!isMain()) return NextResponse.json({ error: "guests cannot modify goals" }, { status: 403 });
   const url = new URL(req.url);
   const accountId = Number(url.searchParams.get("account_id"));
   if (!Number.isFinite(accountId) || accountId <= 0) {

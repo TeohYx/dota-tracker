@@ -1,3 +1,5 @@
+export type Role = "main" | "guest";
+
 export type Profile = {
   account_id: number;
   personaname: string | null;
