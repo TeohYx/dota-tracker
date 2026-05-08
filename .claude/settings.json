@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install*)",
+      "Bash(npm run build*)",
+      "Bash(npm run dev*)",
+      "Bash(npm run start*)",
+      "Bash(npm uninstall*)",
+      "Bash(npm view*)",
+      "Bash(git status*)",
+      "Bash(git log*)",
+      "Bash(git diff*)",
+      "Bash(git add*)",
+      "Bash(git rm*)",
+      "Bash(git fetch*)",
+      "Bash(git remote*)",
+      "Bash(rm -rf .next*)",
+      "Bash(rm -f data/tracker.db*)",
+      "Bash(curl -s http://localhost:3000/*)",
+      "Bash(curl -s -f -o /dev/null http://localhost:3000/*)",
+      "Bash(curl -sI http://localhost:3000/*)",
+      "Bash(curl -s https://api.opendota.com/api/*)",
+      "Bash(file .env*)",
+      "Bash(ls .next*)",
+      "PowerShell(Get-Process node*)",
+      "PowerShell(Get-CimInstance Win32_Process*)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000*)"
+    ]
+  }
+}

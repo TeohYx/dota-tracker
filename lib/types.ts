@@ -1,4 +1,13 @@
-export type Role = "main" | "guest";
+export type User = {
+  id: number;
+  email: string;
+  account_id: number | null;
+  created_at: string;
+};
+
+export type Principal =
+  | { kind: "guest" }
+  | { kind: "user"; user: User };
 
 export type Profile = {
   account_id: number;
@@ -35,7 +44,7 @@ export type Match = {
 };
 
 export type Goal = {
-  account_id: number;
+  user_id: number;
   start_mmr: number;
   target_mmr: number;
   deadline: string;

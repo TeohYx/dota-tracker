@@ -2,37 +2,51 @@
 
 import { useMemo, useState } from "react";
 import useSWR from "swr";
-import type { Goal, Match, PlayerSummary, Role } from "@/lib/types";
+import type { Goal, Match, PlayerSummary, User } from "@/lib/types";
 import { project } from "@/lib/calc";
 import Onboarding from "./Onboarding";
 import LockedDashboard from "./LockedDashboard";
 import MatchList from "./MatchList";
 import ProgressChart from "./ProgressChart";
+import AccountSetup from "./AccountSetup";
 
-const fetcher = (url: string) => fetch(url).then(r => {
-  if (!r.ok) throw new Error(`${r.status}`);
-  return r.json();
-});
+const fetcher = (url: string) =>
+  fetch(url).then(async r => {
+    if (!r.ok) {
+      const body = await r.json().catch(() => null);
+      throw new Error(body?.error ?? `HTTP ${r.status}`);
+    }
+    return r.json();
+  });
 
-export default function Dashboard({ accountId, role }: { accountId: number; role: Role }) {
+type Props =
+  | { kind: "guest"; accountId: number }
+  | { kind: "user"; user: User };
+
+export default function Dashboard(props: Props) {
+  const isGuest = props.kind === "guest";
+  const [user, setUser] = useState<User | null>(props.kind === "user" ? props.user : null);
+  const accountId = isGuest ? props.accountId : user?.account_id ?? null;
+
   const [refreshedAt, setRefreshedAt] = useState<number>(Date.now());
   const [refreshing, setRefreshing] = useState(false);
-  const isGuest = role === "guest";
 
   const { data: player, error: playerErr, isLoading: playerLoading, mutate: refetchPlayer } =
-    useSWR<PlayerSummary>(`/api/player/${accountId}`, fetcher, {
-      refreshInterval: 60_000,
-      onSuccess: () => setRefreshedAt(Date.now())
-    });
+    useSWR<PlayerSummary>(
+      accountId ? `/api/player/${accountId}` : null,
+      fetcher,
+      { refreshInterval: 60_000, onSuccess: () => setRefreshedAt(Date.now()) }
+    );
 
   const { data: matches, mutate: refetchMatches } =
-    useSWR<Match[]>(`/api/player/${accountId}/matches?days=90&limit=500`, fetcher, {
-      refreshInterval: 30_000,
-      onSuccess: () => setRefreshedAt(Date.now())
-    });
+    useSWR<Match[]>(
+      accountId ? `/api/player/${accountId}/matches?days=90&limit=500` : null,
+      fetcher,
+      { refreshInterval: 30_000, onSuccess: () => setRefreshedAt(Date.now()) }
+    );
 
   const { data: goal, mutate: refetchGoal } =
-    useSWR<Goal | null>(`/api/goal?account_id=${accountId}`, fetcher, { refreshInterval: 60_000 });
+    useSWR<Goal | null>(`/api/goal`, fetcher, { refreshInterval: 60_000 });
 
   const { trackedMmr, matchesSinceLockIn } = useMemo(() => {
     if (!goal) return { trackedMmr: player?.derived_mmr ?? 0, matchesSinceLockIn: 0 };
@@ -50,7 +64,7 @@ export default function Dashboard({ accountId, role }: { accountId: number; role
     return project(goal, trackedMmr, matches ?? []);
   }, [goal, trackedMmr, matches]);
 
-  async function signOutOrSwitch() {
+  async function signOut() {
     await fetch("/api/auth", { method: "DELETE" });
     window.location.href = "/login";
   }
@@ -66,10 +80,12 @@ export default function Dashboard({ accountId, role }: { accountId: number; role
   }
 
   const subtitle = isGuest
-    ? `Viewing the dashboard for account ${accountId} (read-only).`
-    : goal
-      ? "Your locked goal — recalculates every day."
-      : "Confirm your MMR, set a goal, lock in.";
+    ? `Viewing the default account (read-only).`
+    : !user?.account_id
+      ? "One more step — link your Dota 2 account."
+      : goal
+        ? "Your locked goal — recalculates every day."
+        : "Confirm your MMR, set a goal, lock in.";
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
@@ -77,6 +93,14 @@ export default function Dashboard({ accountId, role }: { accountId: number; role
         <div>
           <h1 className="text-2xl font-bold">Dota 2 MMR Tracker</h1>
           <p className="text-sm text-muted">{subtitle}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+            {!isGuest && user && <span>Signed in as <span className="text-text">{user.email}</span></span>}
+            {accountId && (
+              <span>
+                Dota ID <span className="font-mono text-text">{accountId}</span>
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {isGuest && (
@@ -84,41 +108,54 @@ export default function Dashboard({ accountId, role }: { accountId: number; role
               👁 Viewing as guest
             </span>
           )}
-          <button
-            className="btn-ghost text-xs"
-            onClick={refreshNow}
-            disabled={refreshing}
-            title="Force-fetch latest from OpenDota"
-          >
-            {refreshing ? "Refreshing…" : "Refresh"}
-          </button>
-          <button className="btn-ghost text-xs" onClick={signOutOrSwitch}>
+          {accountId && (
+            <button
+              className="btn-ghost text-xs"
+              onClick={refreshNow}
+              disabled={refreshing}
+              title="Force-fetch latest from OpenDota"
+            >
+              {refreshing ? "Refreshing…" : "Refresh"}
+            </button>
+          )}
+          <button className="btn-ghost text-xs" onClick={signOut}>
             {isGuest ? "Sign in" : "Sign out"}
           </button>
         </div>
       </header>
 
-      {playerErr && (
+      {/* Signed-in user without a linked Dota account — gate everything else */}
+      {!isGuest && user && !user.account_id && (
+        <AccountSetup
+          user={user}
+          onSaved={(u) => {
+            setUser(u);
+            // SWR keys change as soon as accountId becomes truthy; trigger a fetch.
+            setTimeout(() => { refetchPlayer(); refetchMatches(); }, 0);
+          }}
+        />
+      )}
+
+      {accountId && playerErr && (
         <div className="card border-lose/40 text-sm text-lose">
-          Could not load player {accountId}. Profile may be private.
+          Could not load player {accountId}. The profile may be private, or OpenDota is rate-limiting.
         </div>
       )}
 
-      {playerLoading && !player && (
+      {accountId && playerLoading && !player && (
         <div className="card text-sm text-muted">Loading player…</div>
       )}
 
-      {/* Main user, no goal yet — show onboarding */}
-      {player && !goal && !isGuest && (
+      {/* Signed-in user, account linked, no goal yet — onboard them */}
+      {!isGuest && user?.account_id && player && !goal && (
         <Onboarding
           player={player}
-          accountId={accountId}
           onLocked={() => { refetchGoal(); refetchMatches(); }}
         />
       )}
 
-      {/* Guest, no goal yet — show profile + matches with a notice */}
-      {player && !goal && isGuest && (
+      {/* Guest, no goal exists — show profile + matches (no goal data to render) */}
+      {isGuest && player && !goal && (
         <section className="flex flex-col gap-6">
           <div className="card flex items-center gap-4">
             {player.profile.avatarfull && (
@@ -143,7 +180,7 @@ export default function Dashboard({ accountId, role }: { accountId: number; role
           </div>
 
           <div className="card text-sm text-muted">
-            This user hasn&apos;t locked in a goal yet. The progress dashboard appears once they do.
+            Sign in to track your own MMR goal. This guest view is read-only.
           </div>
 
           <div className="grid gap-6 lg:grid-cols-2">

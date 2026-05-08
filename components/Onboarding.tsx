@@ -19,11 +19,9 @@ function daysUntil(iso: string): number {
 
 export default function Onboarding({
   player,
-  accountId,
   onLocked
 }: {
   player: PlayerSummary;
-  accountId: number;
   onLocked: () => void;
 }) {
   const [step, setStep] = useState<1 | 2>(1);
@@ -56,7 +54,6 @@ export default function Onboarding({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          account_id: accountId,
           start_mmr: startN,
           target_mmr: targetN,
           deadline,

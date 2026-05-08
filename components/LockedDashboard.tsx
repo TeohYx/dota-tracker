@@ -47,7 +47,7 @@ export default function LockedDashboard({
   async function doReset() {
     setResetting(true);
     try {
-      await fetch(`/api/goal?account_id=${projection.goal.account_id}`, { method: "DELETE" });
+      await fetch(`/api/goal`, { method: "DELETE" });
       onReset();
     } finally {
       setResetting(false);
