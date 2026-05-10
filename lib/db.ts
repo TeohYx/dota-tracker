@@ -32,6 +32,22 @@ async function ensureSchema() {
     )
   `);
 
+  // Add notification-related columns to users if missing. ALTER TABLE ADD
+  // COLUMN is permanent in SQLite, so we check pragma first.
+  const userCols = (await c.execute(`PRAGMA table_info(users)`)).rows
+    .map((r: any) => String(r.name));
+  const userMigrations: Array<[string, string]> = [
+    ["telegram_chat_id", "telegram_chat_id TEXT"],
+    ["telegram_link_code", "telegram_link_code TEXT"],
+    ["telegram_link_expires_at", "telegram_link_expires_at TEXT"],
+    ["last_match_id", "last_match_id INTEGER"]
+  ];
+  for (const [col, ddl] of userMigrations) {
+    if (!userCols.includes(col)) {
+      await c.execute(`ALTER TABLE users ADD COLUMN ${ddl}`);
+    }
+  }
+
   // Migration: the old goals table was keyed by account_id. If we detect that
   // shape, drop it — this app moved from single-user to per-user goals and the
   // old rows can't be linked back to a user.
@@ -55,19 +71,23 @@ async function ensureSchema() {
   initialized = true;
 }
 
+const USER_COLS = "id, email, account_id, created_at, telegram_chat_id, last_match_id";
+
 function rowToUser(row: any): User {
   return {
     id: Number(row.id),
     email: String(row.email),
     account_id: row.account_id == null ? null : Number(row.account_id),
-    created_at: String(row.created_at)
+    created_at: String(row.created_at),
+    telegram_chat_id: row.telegram_chat_id == null ? null : String(row.telegram_chat_id),
+    last_match_id: row.last_match_id == null ? null : Number(row.last_match_id)
   };
 }
 
 export async function getUserById(id: number): Promise<User | null> {
   await ensureSchema();
   const res = await getClient().execute({
-    sql: "SELECT id, email, account_id, created_at FROM users WHERE id = ?",
+    sql: `SELECT ${USER_COLS} FROM users WHERE id = ?`,
     args: [id]
   });
   const row = res.rows[0];
@@ -77,7 +97,7 @@ export async function getUserById(id: number): Promise<User | null> {
 export async function getUserByEmail(email: string): Promise<(User & { password_hash: string }) | null> {
   await ensureSchema();
   const res = await getClient().execute({
-    sql: "SELECT id, email, account_id, created_at, password_hash FROM users WHERE email = ?",
+    sql: `SELECT ${USER_COLS}, password_hash FROM users WHERE email = ?`,
     args: [email]
   });
   const row = res.rows[0];
@@ -89,7 +109,7 @@ export async function createUser(input: { email: string; password_hash: string }
   await ensureSchema();
   const res = await getClient().execute({
     sql: `INSERT INTO users (email, password_hash) VALUES (?, ?)
-          RETURNING id, email, account_id, created_at`,
+          RETURNING ${USER_COLS}`,
     args: [input.email, input.password_hash]
   });
   const row = res.rows[0];
@@ -103,6 +123,71 @@ export async function setUserAccountId(userId: number, accountId: number): Promi
     sql: "UPDATE users SET account_id = ? WHERE id = ?",
     args: [accountId, userId]
   });
+}
+
+export async function setTelegramLinkCode(
+  userId: number,
+  code: string,
+  expiresAtIso: string
+): Promise<void> {
+  await ensureSchema();
+  await getClient().execute({
+    sql: `UPDATE users
+          SET telegram_link_code = ?, telegram_link_expires_at = ?
+          WHERE id = ?`,
+    args: [code, expiresAtIso, userId]
+  });
+}
+
+export async function consumeTelegramLinkCode(
+  code: string,
+  chatId: string
+): Promise<User | null> {
+  await ensureSchema();
+  const c = getClient();
+  const res = await c.execute({
+    sql: `SELECT ${USER_COLS}, telegram_link_expires_at
+          FROM users WHERE telegram_link_code = ?`,
+    args: [code]
+  });
+  const row = res.rows[0];
+  if (!row) return null;
+  const expiresAt = row.telegram_link_expires_at ? Date.parse(String(row.telegram_link_expires_at)) : 0;
+  if (!expiresAt || expiresAt < Date.now()) return null;
+  await c.execute({
+    sql: `UPDATE users
+          SET telegram_chat_id = ?,
+              telegram_link_code = NULL,
+              telegram_link_expires_at = NULL
+          WHERE id = ?`,
+    args: [chatId, Number(row.id)]
+  });
+  return rowToUser({ ...row, telegram_chat_id: chatId });
+}
+
+export async function clearTelegramChatId(userId: number): Promise<void> {
+  await ensureSchema();
+  await getClient().execute({
+    sql: "UPDATE users SET telegram_chat_id = NULL WHERE id = ?",
+    args: [userId]
+  });
+}
+
+export async function setLastMatchId(userId: number, matchId: number): Promise<void> {
+  await ensureSchema();
+  await getClient().execute({
+    sql: "UPDATE users SET last_match_id = ? WHERE id = ?",
+    args: [matchId, userId]
+  });
+}
+
+export async function getUsersWithNotifications(): Promise<User[]> {
+  await ensureSchema();
+  const res = await getClient().execute(
+    `SELECT ${USER_COLS} FROM users
+     WHERE telegram_chat_id IS NOT NULL AND account_id IS NOT NULL`
+  );
+  return res.rows.map(rowToUser);
 }
 
 function rowToGoal(row: any): Goal {
