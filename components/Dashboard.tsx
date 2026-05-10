@@ -9,6 +9,7 @@ import LockedDashboard from "./LockedDashboard";
 import MatchList from "./MatchList";
 import ProgressChart from "./ProgressChart";
 import AccountSetup from "./AccountSetup";
+import NotificationsCard from "./NotificationsCard";
 
 const fetcher = (url: string) =>
   fetch(url).then(async r => {
@@ -152,6 +153,13 @@ export default function Dashboard(props: Props) {
           player={player}
           onLocked={() => { refetchGoal(); refetchMatches(); }}
         />
+      )}
+
+      {/* Notifications panel — only shown to signed-in users with a linked account */}
+      {!isGuest && user?.account_id && (
+        <div className="mt-6">
+          <NotificationsCard user={user} onChange={setUser} />
+        </div>
       )}
 
       {/* Guest, no goal exists — show profile + matches (no goal data to render) */}

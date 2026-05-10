@@ -3,6 +3,8 @@ export type User = {
   email: string;
   account_id: number | null;
   created_at: string;
+  telegram_chat_id: string | null;
+  last_match_id: number | null;
 };
 
 export type Principal =
