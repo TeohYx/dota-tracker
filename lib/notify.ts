@@ -1,5 +1,6 @@
 import type { Goal, Match, User } from "./types";
 import { sendMessage } from "./telegram";
+import { getHeroName } from "./opendota";
 
 const TZ_OFFSET_MS = 8 * 60 * 60 * 1000; // Asia/Kuala_Lumpur (UTC+8)
 
@@ -15,16 +16,17 @@ function fmtDuration(seconds: number): string {
 
 export function composeMatchMessage(
   match: Match,
-  opts: { mmrAfter?: number; mmrPerWin: number }
+  opts: { mmrAfter?: number; mmrPerWin: number; heroName?: string }
 ): string {
   const verdict = match.win ? "✅ <b>Win</b>" : "❌ <b>Loss</b>";
   const delta = match.win ? `+${opts.mmrPerWin}` : `-${opts.mmrPerWin}`;
   const mmrLine = opts.mmrAfter != null
     ? `\nMMR: <b>${opts.mmrAfter.toLocaleString()}</b> (${delta})`
     : `\n${delta} MMR`;
+  const hero = opts.heroName ?? `Hero ${match.hero_id}`;
   return [
     `${verdict} — match <code>${match.match_id}</code>`,
-    `Hero ${match.hero_id} · KDA ${fmtKDA(match)} · ${fmtDuration(match.duration)}`
+    `${hero} · KDA ${fmtKDA(match)} · ${fmtDuration(match.duration)}`
   ].join("\n") + mmrLine;
 }
 
@@ -66,7 +68,8 @@ export async function notifyMatch(
   opts: { mmrAfter?: number; mmrPerWin: number }
 ): Promise<void> {
   if (!user.telegram_chat_id) return;
-  await sendMessage(user.telegram_chat_id, composeMatchMessage(match, opts));
+  const heroName = await getHeroName(match.hero_id);
+  await sendMessage(user.telegram_chat_id, composeMatchMessage(match, { ...opts, heroName }));
 }
 
 export async function notifyDaily(user: User, summary: DailySummary): Promise<void> {

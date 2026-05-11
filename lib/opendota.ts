@@ -80,6 +80,34 @@ export async function fetchPlayerSummary(accountId: number): Promise<PlayerSumma
   };
 }
 
+let heroNameCache: { ts: number; map: Map<number, string> } | null = null;
+const HERO_CACHE_MS = 24 * 60 * 60 * 1000;
+
+export async function fetchHeroNames(): Promise<Map<number, string>> {
+  if (heroNameCache && Date.now() - heroNameCache.ts < HERO_CACHE_MS) {
+    return heroNameCache.map;
+  }
+  try {
+    const data = await odFetch(`/heroes`, { cacheSeconds: HERO_CACHE_MS / 1000 });
+    const arr: any[] = Array.isArray(data) ? data : [];
+    const map = new Map<number, string>();
+    for (const h of arr) {
+      if (typeof h?.id === "number" && typeof h?.localized_name === "string") {
+        map.set(h.id, h.localized_name);
+      }
+    }
+    heroNameCache = { ts: Date.now(), map };
+    return map;
+  } catch {
+    return heroNameCache?.map ?? new Map();
+  }
+}
+
+export async function getHeroName(heroId: number): Promise<string> {
+  const map = await fetchHeroNames();
+  return map.get(heroId) ?? `Hero ${heroId}`;
+}
+
 export async function fetchMatches(
   accountId: number,
   opts: { days?: number; limit?: number } = {}
