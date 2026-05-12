@@ -27,7 +27,10 @@ export async function GET(req: Request) {
   for (const user of users) {
     if (!user.account_id || !user.telegram_chat_id) continue;
     try {
-      const allMatches = await fetchMatches(user.account_id, { days: 2, limit: 100 });
+      // Wide window (90d/500) so the mmrAfter sinceLockIn base counts all
+      // post-lockin ranked matches, not just yesterday's. The yesterday filter
+      // below still narrows the daily counts.
+      const allMatches = await fetchMatches(user.account_id, { days: 90, limit: 500 });
       const matches = allMatches.filter(isRankedMatch);
       const yesterday = matches.filter(
         m => m.start_time * 1000 >= startMs && m.start_time * 1000 < endMs

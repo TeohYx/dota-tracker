@@ -221,6 +221,41 @@ describe("computeMatchUpdates", () => {
     expect(updates).toHaveLength(1);
     expect(updates[0].mmrAfter).toBeUndefined();
   });
+
+  it("requires full post-lockin window: narrow window inflates mmrAfter", () => {
+    // Regression: telegram mmrAfter was 75 MMR higher than the frontend because
+    // poll-matches fetched only the last 7 days / 20 matches. Older post-lockin
+    // losses fell outside the window, so the base undercounted losses.
+    // The function trusts the caller to supply all post-lockin ranked matches.
+    // This test documents that contract: when older losses are absent, mmrAfter
+    // drifts upward; when present, it matches reality.
+    const oldLoss = mkMatch({
+      match_id: 80,
+      start_time: Math.floor(Date.parse("2026-05-02T00:00:00Z") / 1000),
+      win: false,
+      lobby_type: 7
+    });
+    const fresh = mkMatch({
+      match_id: 101,
+      start_time: Math.floor(Date.parse("2026-05-11T10:00:00Z") / 1000),
+      win: true,
+      lobby_type: 7
+    });
+
+    const narrow = computeMatchUpdates({
+      matches: [fresh], // old loss missing — simulates narrow fetch window
+      lastMatchId: 80,
+      goal
+    });
+    expect(narrow[0].mmrAfter).toBe(7_025); // 7_000 + 0 (missing) + 25
+
+    const wide = computeMatchUpdates({
+      matches: [oldLoss, fresh],
+      lastMatchId: 80,
+      goal
+    });
+    expect(wide[0].mmrAfter).toBe(7_000); // 7_000 - 25 (loss) + 25 (fresh)
+  });
 });
 
 describe("previousMyDayRange", () => {

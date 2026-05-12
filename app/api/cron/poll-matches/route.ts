@@ -30,7 +30,10 @@ export async function GET(req: Request) {
   for (const user of users) {
     if (!user.account_id || !user.telegram_chat_id) continue;
     try {
-      const matches = await fetchMatches(user.account_id, { days: 7, limit: 20 });
+      // Match the frontend window (90d/500). Cursor base counts all
+      // post-lockin ranked matches, so a narrow window silently undercounts
+      // historical losses and inflates mmrAfter on the next notification.
+      const matches = await fetchMatches(user.account_id, { days: 90, limit: 500 });
       if (matches.length === 0) {
         results.push({ user_id: user.id, sent: 0 });
         continue;
