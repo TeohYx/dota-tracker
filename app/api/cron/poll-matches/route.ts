@@ -5,7 +5,7 @@ import {
   setLastMatchId
 } from "@/lib/db";
 import { fetchMatches } from "@/lib/opendota";
-import { notifyMatch } from "@/lib/notify";
+import { computeMatchUpdates, notifyMatch } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -44,34 +44,22 @@ export async function GET(req: Request) {
         continue;
       }
 
-      const fresh = matches
-        .filter(m => m.match_id > user.last_match_id!)
-        .sort((a, b) => a.start_time - b.start_time);
-
-      if (fresh.length === 0) {
-        results.push({ user_id: user.id, sent: 0 });
-        continue;
-      }
-
       const goal = await getGoal(user.id);
       const mmrPerWin = goal?.mmr_per_win ?? 25;
+      const updates = computeMatchUpdates({
+        matches,
+        lastMatchId: user.last_match_id,
+        goal
+      });
 
-      let mmrCursor = goal
-        ? goal.start_mmr +
-          matches
-            .filter(m => m.start_time * 1000 >= new Date(goal.created_at).getTime() && m.match_id <= user.last_match_id!)
-            .reduce((acc, m) => acc + (m.win ? 1 : -1), 0) * mmrPerWin
-        : undefined;
-
-      for (const m of fresh) {
-        if (mmrCursor != null) {
-          mmrCursor += (m.win ? 1 : -1) * mmrPerWin;
-        }
-        await notifyMatch(user, m, { mmrAfter: mmrCursor, mmrPerWin });
+      for (const { match, mmrAfter } of updates) {
+        await notifyMatch(user, match, { mmrAfter, mmrPerWin });
       }
 
+      // Advance the watermark across ALL matches (including non-ranked) so
+      // turbos/normal queue games aren't reconsidered on the next poll.
       await setLastMatchId(user.id, Math.max(maxSeen, user.last_match_id));
-      results.push({ user_id: user.id, sent: fresh.length });
+      results.push({ user_id: user.id, sent: updates.length });
     } catch (err: any) {
       results.push({ user_id: user.id, sent: 0, error: err?.message ?? String(err) });
     }

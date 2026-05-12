@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { composeMatchMessage, composeDailyMessage, previousMyDayRange } from "@/lib/notify";
-import type { Match } from "@/lib/types";
+import {
+  composeMatchMessage,
+  composeDailyMessage,
+  computeMatchUpdates,
+  previousMyDayRange
+} from "@/lib/notify";
+import type { Goal, Match } from "@/lib/types";
 
 const baseMatch: Match = {
   match_id: 8123456789,
@@ -13,6 +18,26 @@ const baseMatch: Match = {
   win: true,
   game_mode: 22,
   lobby_type: 7
+};
+
+function mkMatch(over: Partial<Match> & { match_id: number }): Match {
+  // Default start_time is post-lock-in (2026-05-02) and monotonic in match_id,
+  // so matches are always inside the goal window unless a test overrides it.
+  const postLockIn = Math.floor(Date.parse("2026-05-02T00:00:00Z") / 1000);
+  return {
+    ...baseMatch,
+    start_time: postLockIn + over.match_id,
+    ...over
+  };
+}
+
+const goal: Goal = {
+  user_id: 1,
+  start_mmr: 7_000,
+  target_mmr: 10_000,
+  deadline: "2026-12-31",
+  created_at: "2026-05-01T00:00:00Z",
+  mmr_per_win: 25
 };
 
 describe("composeMatchMessage", () => {
@@ -114,6 +139,87 @@ describe("composeDailyMessage", () => {
       }
     });
     expect(out).toContain("Goal reached");
+  });
+});
+
+describe("computeMatchUpdates", () => {
+  it("advances cursor by exactly mmrPerWin per ranked match", () => {
+    // Regression: telegram notifications showed MMR jumping by +50 per match
+    // while the label said +25, because non-ranked games were inflating the
+    // cursor between cron runs.
+    const matches: Match[] = [
+      // Historical ranked match (since lock-in, <= lastMatchId) — counted as +1 win
+      mkMatch({ match_id: 100, win: true, lobby_type: 7 }),
+      // Three fresh ranked matches: W, L, W
+      mkMatch({ match_id: 101, win: true, lobby_type: 7 }),
+      mkMatch({ match_id: 102, win: false, lobby_type: 7 }),
+      mkMatch({ match_id: 103, win: true, lobby_type: 7 })
+    ];
+    const updates = computeMatchUpdates({ matches, lastMatchId: 100, goal });
+    expect(updates).toHaveLength(3);
+    expect(updates[0].mmrAfter).toBe(7_050); // 7_000 + 1*25 (history) + 25
+    expect(updates[1].mmrAfter).toBe(7_025); // -25
+    expect(updates[2].mmrAfter).toBe(7_050); // +25
+  });
+
+  it("ignores non-ranked matches in both fresh list and base cursor", () => {
+    // Mix of ranked + turbo (lobby_type 0). Only the ranked one should notify
+    // and only the ranked ones should move MMR.
+    const matches: Match[] = [
+      mkMatch({ match_id: 100, win: true, lobby_type: 7 }), // historical ranked W
+      mkMatch({ match_id: 101, win: true, lobby_type: 0 }), // historical turbo W — must not count
+      mkMatch({ match_id: 102, win: true, lobby_type: 0 }), // fresh turbo W — must not notify
+      mkMatch({ match_id: 103, win: true, lobby_type: 7 })  // fresh ranked W
+    ];
+    const updates = computeMatchUpdates({ matches, lastMatchId: 101, goal });
+    expect(updates).toHaveLength(1);
+    expect(updates[0].match.match_id).toBe(103);
+    expect(updates[0].mmrAfter).toBe(7_050); // base = 7_000 + 1*25 (only ranked m100), then +25
+  });
+
+  it("excludes matches before goal.created_at from the historical base", () => {
+    const matches: Match[] = [
+      // Pre-lock-in win — must not count toward base
+      mkMatch({
+        match_id: 50,
+        start_time: Math.floor(Date.parse("2026-04-01T00:00:00Z") / 1000),
+        win: true,
+        lobby_type: 7
+      }),
+      // Post-lock-in historical loss — counted as -1
+      mkMatch({
+        match_id: 100,
+        start_time: Math.floor(Date.parse("2026-05-02T00:00:00Z") / 1000),
+        win: false,
+        lobby_type: 7
+      }),
+      // Fresh ranked win
+      mkMatch({
+        match_id: 101,
+        start_time: Math.floor(Date.parse("2026-05-11T10:00:00Z") / 1000),
+        win: true,
+        lobby_type: 7
+      })
+    ];
+    const updates = computeMatchUpdates({ matches, lastMatchId: 100, goal });
+    expect(updates).toHaveLength(1);
+    expect(updates[0].mmrAfter).toBe(7_000); // 7_000 - 25 (history) + 25 (fresh)
+  });
+
+  it("returns an empty list when there are no fresh ranked matches", () => {
+    const matches: Match[] = [
+      mkMatch({ match_id: 100, win: true, lobby_type: 7 }),
+      mkMatch({ match_id: 101, win: true, lobby_type: 0 }) // turbo, ignored
+    ];
+    const updates = computeMatchUpdates({ matches, lastMatchId: 100, goal });
+    expect(updates).toEqual([]);
+  });
+
+  it("leaves mmrAfter undefined when no goal is set", () => {
+    const matches: Match[] = [mkMatch({ match_id: 101, win: true, lobby_type: 7 })];
+    const updates = computeMatchUpdates({ matches, lastMatchId: 100, goal: null });
+    expect(updates).toHaveLength(1);
+    expect(updates[0].mmrAfter).toBeUndefined();
   });
 });
 

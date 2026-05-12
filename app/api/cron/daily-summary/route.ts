@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getGoal, getUsersWithNotifications } from "@/lib/db";
 import { fetchMatches } from "@/lib/opendota";
-import { notifyDaily, previousMyDayRange, type DailySummary } from "@/lib/notify";
+import { isRankedMatch, notifyDaily, previousMyDayRange, type DailySummary } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -27,7 +27,8 @@ export async function GET(req: Request) {
   for (const user of users) {
     if (!user.account_id || !user.telegram_chat_id) continue;
     try {
-      const matches = await fetchMatches(user.account_id, { days: 2, limit: 100 });
+      const allMatches = await fetchMatches(user.account_id, { days: 2, limit: 100 });
+      const matches = allMatches.filter(isRankedMatch);
       const yesterday = matches.filter(
         m => m.start_time * 1000 >= startMs && m.start_time * 1000 < endMs
       );

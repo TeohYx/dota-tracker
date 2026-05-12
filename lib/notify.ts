@@ -4,6 +4,52 @@ import { getHeroName } from "./opendota";
 
 const TZ_OFFSET_MS = 8 * 60 * 60 * 1000; // Asia/Kuala_Lumpur (UTC+8)
 
+// Dota's "Ranked Matchmaking" lobby type. Only matches with this lobby_type
+// affect ranked MMR — turbos/normal queue/bots/parties must be excluded from
+// MMR cursor math, otherwise non-ranked games inflate the tracked MMR.
+export const RANKED_LOBBY_TYPE = 7;
+
+export function isRankedMatch(m: Match): boolean {
+  return m.lobby_type === RANKED_LOBBY_TYPE;
+}
+
+export type MatchUpdate = { match: Match; mmrAfter: number | undefined };
+
+// Pure function: given OpenDota matches, the last-seen match id, and the goal,
+// return the fresh ranked matches to notify and the running MMR cursor for each.
+// Non-ranked matches are filtered out for both the historical base count and
+// the fresh list, so they neither produce notifications nor move MMR.
+export function computeMatchUpdates(input: {
+  matches: Match[];
+  lastMatchId: number;
+  goal: Goal | null;
+}): MatchUpdate[] {
+  const ranked = input.matches.filter(isRankedMatch);
+  const fresh = ranked
+    .filter(m => m.match_id > input.lastMatchId)
+    .sort((a, b) => a.start_time - b.start_time);
+  if (fresh.length === 0) return [];
+
+  const mmrPerWin = input.goal?.mmr_per_win ?? 25;
+  let cursor: number | undefined = input.goal
+    ? input.goal.start_mmr +
+      ranked
+        .filter(
+          m =>
+            m.start_time * 1000 >= new Date(input.goal!.created_at).getTime() &&
+            m.match_id <= input.lastMatchId
+        )
+        .reduce((acc, m) => acc + (m.win ? 1 : -1), 0) * mmrPerWin
+    : undefined;
+
+  const updates: MatchUpdate[] = [];
+  for (const match of fresh) {
+    if (cursor != null) cursor += (match.win ? 1 : -1) * mmrPerWin;
+    updates.push({ match, mmrAfter: cursor });
+  }
+  return updates;
+}
+
 function fmtKDA(m: Match): string {
   return `${m.kills}/${m.deaths}/${m.assists}`;
 }
